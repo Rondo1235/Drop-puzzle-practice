@@ -48,7 +48,8 @@ button.primary{background:linear-gradient(100deg,#8071f4,#a65fe1)}
 button.active{background:linear-gradient(100deg,#ed925b,#dc4e75)}
 button:active{transform:scale(.98)}
 .tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-.tools button{flex:1 1 28%;font-size:12px;padding:10px 5px}
+.tools button{flex:1 1 30%;font-size:12px;padding:10px 5px}
+button:disabled{opacity:.45;cursor:default}
 .status{min-height:42px;margin:12px 2px 0;color:#d7d5ec;font-size:13px;line-height:1.6}
 .hint{margin:15px 2px 0;padding-top:13px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.7}
 .legend{display:flex;flex-wrap:wrap;gap:8px 13px;margin:12px 2px 2px;color:var(--muted);font-size:11px}
@@ -97,8 +98,7 @@ button:active{transform:scale(.98)}
       <button data-add="jammer">⚫ お邪魔</button>
       <button data-add="poison">☠️ 毒</button>
       <button data-add="bomb">💣 爆弾</button>
-      <button data-add="erase">消しゴム</button>
-      <button id="clear">盤面を空に</button>
+      <button id="undo" disabled>↶ 1つ戻す</button>
       <button id="addRoulette">＋ ルーレット</button>
     </div>
     <section class="roulette-settings" aria-label="ルーレット設定">
@@ -125,11 +125,12 @@ button:active{transform:scale(.98)}
   const label = {fire:'火',water:'水',wood:'木',light:'光',dark:'闇',heart:'回復',jammer:'お邪魔',poison:'毒',bomb:'爆弾'};
   const defaultTypes = ['fire','water','wood','light','dark','heart'];
   let enabledTypes = new Set(defaultTypes);
-  let cells = [], roulette = [], cellElements = [], moves = 0, selected = -1, placing = null;
+  let cells = [], roulette = [], cellElements = [], selected = -1, placing = null;
+  let history = [];
   let drag = -1, dragged = false, placingRoulette = false, resolving = false, rouletteTimer = null;
+  let drawFrame = 0;
   const board = document.querySelector('#board');
   const status = document.querySelector('#status');
-  const count = document.querySelector('#count');
   const held = document.querySelector('#held');
   const heldIcon = held.querySelector('.orb-icon');
   const intervalSelect = document.querySelector('#interval');
@@ -137,10 +138,45 @@ button:active{transform:scale(.98)}
   const typeOptions = document.querySelector('#typeOptions');
   const boardSizeSelect = document.querySelector('#boardSize');
   const boardSizeLabel = document.querySelector('#boardSizeLabel');
+  const undoButton = document.querySelector('#undo');
+
+  function saveUndo() {
+    if (!cells.length) return;
+    history.push({cells:cells.slice(), roulette:roulette.slice(), W, H});
+    if (history.length > 30) history.shift();
+    undoButton.disabled = false;
+  }
+
+  function undo() {
+    if (resolving || history.length === 0) return;
+    const previous = history.pop();
+    cells = previous.cells;
+    roulette = previous.roulette;
+    W = previous.W;
+    H = previous.H;
+    N = W * H;
+    boardSizeSelect.value = W + 'x' + H;
+    board.style.setProperty('--columns', W);
+    boardSizeLabel.textContent = W + ' × ' + H;
+    selected = -1;
+    drag = -1;
+    held.classList.remove('visible');
+    undoButton.disabled = history.length === 0;
+    draw();
+    startRouletteTimer();
+    say('直前の盤面に戻しました。');
+  }
 
   function say(text) { status.textContent = text; }
   function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
   function rand() { return order[Math.floor(Math.random() * 6)]; }
+  function scheduleDraw() {
+    if (drawFrame) return;
+    drawFrame = requestAnimationFrame(() => {
+      drawFrame = 0;
+      draw();
+    });
+  }
 
   function buildTypeOptions() {
     typeOptions.innerHTML = '';
@@ -170,6 +206,10 @@ button:active{transform:scale(.98)}
   }
 
   function draw(options = {}) {
+    if (drawFrame) {
+      cancelAnimationFrame(drawFrame);
+      drawFrame = 0;
+    }
     const clearing = options.clearing || new Set();
     const falls = options.falls || [];
     const firstCell = cellElements[0];
@@ -239,13 +279,13 @@ button:active{transform:scale(.98)}
     cells = Array.from({length:N}, rand);
     roulette = Array(N).fill(false);
     while (matches().size > 0) cells = Array.from({length:N}, rand);
-    moves = 0;
     selected = -1;
     placing = null;
     placingRoulette = false;
     rouletteButton.classList.remove('active');
     board.style.setProperty('--columns', W);
     boardSizeLabel.textContent = W + ' × ' + H;
+    say('ドロップを動かして離すと、そろったドロップが消えて落下・連鎖します。');
     draw();
   }
 
@@ -284,6 +324,7 @@ button:active{transform:scale(.98)}
       say('空のマスにはルーレットを置けません。');
       return;
     }
+    saveUndo();
     roulette[index] = !roulette[index];
     draw();
     say(roulette[index] ? label[cells[index]] + 'ドロップにルーレットを追加しました。' : 'このマスのルーレットを解除しました。');
@@ -325,7 +366,7 @@ button:active{transform:scale(.98)}
     }
     dragged = true;
     selected = -1;
-    draw();
+    scheduleDraw();
   }
 
   function paintAlongPath(destination) {
@@ -339,11 +380,11 @@ button:active{transform:scale(.98)}
       if (twiceError >= dy) { error += dy; x += sx; }
       if (twiceError <= dx) { error += dx; y += sy; }
       const next = y * W + x;
-      cells[next] = placing === 'erase' ? null : placing;
+      cells[next] = placing;
       drag = next;
     }
     dragged = true;
-    draw();
+    scheduleDraw();
   }
 
   function cellIndex(event) {
@@ -425,7 +466,8 @@ button:active{transform:scale(.98)}
     }
     drag = index;
     dragged = false;
-    if (placing) cells[index] = placing === 'erase' ? null : placing;
+    saveUndo();
+    if (placing) cells[index] = placing;
     board.setPointerCapture(event.pointerId);
     draw();
     updateHeld(event);
@@ -452,12 +494,10 @@ button:active{transform:scale(.98)}
     drag = -1;
 
     if (placing) {
-      cells[endIndex] = placing === 'erase' ? null : placing;
-      moves++;
+      cells[endIndex] = placing;
       say('盤面を編集しました。3個以上そろうと自動で消えます。');
       draw();
     } else if (dragged) {
-      moves++;
       resolve();
     } else {
       selected = -1;
@@ -465,17 +505,12 @@ button:active{transform:scale(.98)}
   });
 
   document.querySelector('#shuffle').onclick = () => {
-    if (!resolving) init();
+    if (!resolving) {
+      saveUndo();
+      init();
+    }
   };
-  document.querySelector('#clear').onclick = () => {
-    if (resolving) return;
-    cells = Array(N).fill(null);
-    roulette = Array(N).fill(false);
-    selected = -1;
-    startRouletteTimer();
-    draw();
-    say('盤面を空にしました。');
-  };
+
   document.querySelectorAll('[data-add]').forEach(button => {
     button.onclick = () => {
       if (resolving) return;
@@ -486,9 +521,10 @@ button:active{transform:scale(.98)}
         other.classList.toggle('primary', placing !== null && other === button);
       });
       if (!placing) say('盤面編集を終了しました。ドロップを動かせます。');
-      else say(placing === 'erase' ? '消したいマスをタップしてください。' : label[placing] + 'ドロップを置くマスをタップしてください。');
+      else say(label[placing] + 'ドロップを置くマスをタップしてください。');
     };
   });
+
   rouletteButton.onclick = () => {
     if (resolving) return;
     placing = null;
@@ -497,11 +533,14 @@ button:active{transform:scale(.98)}
     rouletteButton.classList.toggle('active', placingRoulette);
     say(placingRoulette ? 'ルーレットを置くドロップをタップしてください。続けて複数のマスに置けます。' : 'ルーレットの配置を終了しました。');
   };
+
   intervalSelect.addEventListener('change', () => {
     startRouletteTimer();
     say('ルーレットの変化間隔を更新しました。');
   });
+
   boardSizeSelect.addEventListener('change', () => {
+    saveUndo();
     const [width, height] = boardSizeSelect.value.split('x').map(Number);
     W = width;
     H = height;
@@ -509,6 +548,8 @@ button:active{transform:scale(.98)}
     init();
     say('盤面サイズを ' + W + ' × ' + H + ' に変更しました。');
   });
+
+  undoButton.addEventListener('click', undo);
   buildTypeOptions();
   init();
 })();
