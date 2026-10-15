@@ -38,7 +38,7 @@ body{margin:0;min-height:100vh;min-height:100dvh;background:radial-gradient(elli
 .jammer{background:radial-gradient(circle at 34% 27%,#eef1f6,#9ba4b5 48%,#525b70 100%)}
 .poison{background:radial-gradient(circle at 34% 27%,#fbd4ff,#d34fe5 48%,#70118d 100%)}
 .bomb{background:radial-gradient(circle at 34% 27%,#fff0b0,#ffae3d 48%,#c34b1d 100%)}
-.clearing{animation:clear-pop 200ms ease-in forwards}
+.clearing{animation:clear-pop 100ms ease-in forwards}
 @keyframes clear-pop{to{transform:scale(.15);opacity:0}}
 .falling{animation:fall-in 390ms cubic-bezier(.18,.72,.3,1) both}
 @keyframes fall-in{from{transform:translateY(var(--fall-from)) scale(.9);opacity:.65}to{transform:translateY(0) scale(1);opacity:1}}
@@ -274,6 +274,40 @@ button:disabled{opacity:.45;cursor:default}
     return matched;
   }
 
+  function compareClearOrder(a, b) {
+    return Math.floor(b / W) - Math.floor(a / W) || (a % W) - (b % W);
+  }
+
+  function getMatchGroups(matched) {
+    const visited = new Set();
+    const groups = [];
+    for (const start of matched) {
+      if (visited.has(start)) continue;
+      const type = cells[start];
+      const stack = [start];
+      const group = [];
+      visited.add(start);
+      while (stack.length) {
+        const index = stack.pop();
+        group.push(index);
+        const row = Math.floor(index / W), col = index % W;
+        const neighbors = [];
+        if (col > 0) neighbors.push(index - 1);
+        if (col < W - 1) neighbors.push(index + 1);
+        if (row > 0) neighbors.push(index - W);
+        if (row < H - 1) neighbors.push(index + W);
+        for (const next of neighbors) {
+          if (matched.has(next) && !visited.has(next) && cells[next] === type) {
+            visited.add(next);
+            stack.push(next);
+          }
+        }
+      }
+      groups.push(group.sort(compareClearOrder));
+    }
+    return groups.sort((a, b) => compareClearOrder(a[0], b[0]));
+  }
+
   function init() {
     stopRouletteTimer();
     cells = Array.from({length:N}, rand);
@@ -398,7 +432,10 @@ button:disabled{opacity:.45;cursor:default}
     let totalCleared = 0, comboCount = 0, bombCount = 0;
     try {
       while (true) {
-        const gone = matches();
+        const matched = matches();
+        const matchGroups = getMatchGroups(matched);
+        comboCount += matchGroups.length;
+        const gone = new Set(matched);
         const bombs = [];
         cells.forEach((type, index) => {
           if (type === 'bomb' && !gone.has(index)) bombs.push(index);
@@ -409,12 +446,22 @@ button:disabled{opacity:.45;cursor:default}
           for (let y = 0; y < H; y++) gone.add(y * W + col);
         }
         if (gone.size === 0) break;
-        comboCount++;
         bombCount += bombs.length;
         totalCleared += gone.size;
-        draw({clearing:gone});
-        await wait(200);
-        gone.forEach(index => { cells[index] = null; });
+        for (const group of matchGroups) {
+          for (const index of group) {
+            draw({clearing:new Set([index])});
+            await wait(100);
+            cells[index] = null;
+          }
+        }
+        const matchedSet = new Set(matchGroups.flat());
+        const bombClears = [...gone].filter(index => !matchedSet.has(index)).sort(compareClearOrder);
+        for (const index of bombClears) {
+          draw({clearing:new Set([index])});
+          await wait(100);
+          cells[index] = null;
+        }
 
         const falls = Array(N).fill(0);
         for (let col = 0; col < W; col++) {
@@ -449,8 +496,7 @@ button:disabled{opacity:.45;cursor:default}
       say('消えるドロップはありません。');
       return;
     }
-    let message = totalCleared + '個のドロップを消去';
-    if (comboCount > 1) message += '、' + comboCount + '連鎖';
+    let message = totalCleared + '個のドロップを消去、' + comboCount + 'コンボ';
     if (bombCount > 0) message += '。爆弾 ' + bombCount + ' 個が爆発';
     say(message + 'しました。');
   }
@@ -510,7 +556,6 @@ button:disabled{opacity:.45;cursor:default}
       init();
     }
   };
-
   document.querySelectorAll('[data-add]').forEach(button => {
     button.onclick = () => {
       if (resolving) return;
@@ -524,7 +569,6 @@ button:disabled{opacity:.45;cursor:default}
       else say(label[placing] + 'ドロップを置くマスをタップしてください。');
     };
   });
-
   rouletteButton.onclick = () => {
     if (resolving) return;
     placing = null;
@@ -533,12 +577,10 @@ button:disabled{opacity:.45;cursor:default}
     rouletteButton.classList.toggle('active', placingRoulette);
     say(placingRoulette ? 'ルーレットを置くドロップをタップしてください。続けて複数のマスに置けます。' : 'ルーレットの配置を終了しました。');
   };
-
   intervalSelect.addEventListener('change', () => {
     startRouletteTimer();
     say('ルーレットの変化間隔を更新しました。');
   });
-
   boardSizeSelect.addEventListener('change', () => {
     saveUndo();
     const [width, height] = boardSizeSelect.value.split('x').map(Number);
@@ -548,7 +590,6 @@ button:disabled{opacity:.45;cursor:default}
     init();
     say('盤面サイズを ' + W + ' × ' + H + ' に変更しました。');
   });
-
   undoButton.addEventListener('click', undo);
   buildTypeOptions();
   init();
