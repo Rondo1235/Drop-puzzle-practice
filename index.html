@@ -74,7 +74,7 @@ button:active{transform:scale(.98)}
     <h1>ドロップパズル練習</h1>
   </header>
   <section class="card" aria-label="パズル盤面">
-    <div class="stats"><span>盤面 <strong id="boardSizeLabel">6 × 5</strong></span><span id="count">移動 0 回</span></div>
+    <div class="stats"><span>盤面 <strong id="boardSizeLabel">6 × 5</strong></span></div>
     <label class="size-row" for="boardSize">
       <span>盤面サイズ</span>
       <select id="boardSize">
@@ -114,11 +114,6 @@ button:active{transform:scale(.98)}
       </label>
     </section>
     <div id="status" class="status" aria-live="polite"></div>
-    <div class="legend">
-      <span><b>🔵</b> 水</span><span><b>🔴</b> 火</span><span><b>🟢</b> 木</span>
-      <span><b>🟡</b> 光</span><span><b>🟣</b> 闇</span><span><b>💗</b> 回復</span>
-      <span><b>⚫</b> お邪魔</span><span><b>☠️</b> 毒</span><span><b>💣</b> 爆弾</span>
-    </div>
   </section>
 </main>
 <div id="held" class="held" aria-hidden="true"><span class="orb-icon"></span></div>
@@ -126,8 +121,8 @@ button:active{transform:scale(.98)}
 (() => {
   let W = 6, H = 5, N = W * H;
   const order = ['fire','water','wood','light','dark','heart','jammer','poison','bomb'];
-  const icon = {water:'🔵',fire:'🔴',wood:'🟢',light:'🟡',dark:'🟣',heart:'💗',jammer:'⚫',poison:'☠️',bomb:'💣'};
-  const label = {water:'水',fire:'火',wood:'木',light:'光',dark:'闇',heart:'回復',jammer:'お邪魔',poison:'毒',bomb:'爆弾'};
+  const icon = {fire:'🔴',water:'🔵',wood:'🟢',light:'🟡',dark:'🟣',heart:'💗',jammer:'⚫',poison:'☠️',bomb:'💣'};
+  const label = {fire:'火',water:'水',wood:'木',light:'光',dark:'闇',heart:'回復',jammer:'お邪魔',poison:'毒',bomb:'爆弾'};
   const defaultTypes = ['fire','water','wood','light','dark','heart'];
   let enabledTypes = new Set(defaultTypes);
   let cells = [], roulette = [], cellElements = [], moves = 0, selected = -1, placing = null;
@@ -251,8 +246,6 @@ button:active{transform:scale(.98)}
     rouletteButton.classList.remove('active');
     board.style.setProperty('--columns', W);
     boardSizeLabel.textContent = W + ' × ' + H;
-    count.textContent = '移動 0 回';
-    say('ドロップを動かして離すと、そろったドロップが消えて落下・連鎖します。');
     draw();
   }
 
@@ -461,12 +454,10 @@ button:active{transform:scale(.98)}
     if (placing) {
       cells[endIndex] = placing === 'erase' ? null : placing;
       moves++;
-      count.textContent = '移動 ' + moves + ' 回';
       say('盤面を編集しました。3個以上そろうと自動で消えます。');
       draw();
     } else if (dragged) {
       moves++;
-      count.textContent = '移動 ' + moves + ' 回';
       resolve();
     } else {
       selected = -1;
