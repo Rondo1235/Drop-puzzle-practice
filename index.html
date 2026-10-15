@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101426">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>ドロップパズル練習</title>
+<style>
+:root{color-scheme:dark;--bg:#101426;--muted:#aab1cd;--line:#343c5b}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;min-height:100dvh;background:radial-gradient(ellipse at 50% -20%,#343661 0,transparent 55%),var(--bg);color:#f6f4ff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overscroll-behavior-y:contain}
+.wrap{width:100%;max-width:560px;margin:auto;padding:24px 16px max(36px,env(safe-area-inset-bottom))}
+.top{text-align:center;margin:4px 0 20px}
+.eyebrow{font-size:12px;letter-spacing:.12em;color:#bdb5ff}
+.top h1{font-size:25px;margin:7px 0}
+.top p{margin:0;color:var(--muted);font-size:14px}
+.card{background:#1b2037df;border:1px solid #ffffff14;border-radius:20px;padding:16px;box-shadow:0 18px 60px #07091466}
+.stats{display:flex;justify-content:space-between;align-items:center;margin:0 3px 13px;color:var(--muted);font-size:13px}
+.stats strong{color:white;font-size:16px}
+.board{width:100%;display:grid;grid-template-columns:repeat(var(--columns,6),minmax(0,1fr));gap:5px;padding:7px;border-radius:15px;background:linear-gradient(145deg,#11162a,#252b46);touch-action:none;user-select:none;overflow:hidden}
+.cell{aspect-ratio:1;min-width:0;border-radius:50%;display:grid;place-items:center;position:relative;border:2px solid #ffffff35;cursor:grab;box-shadow:inset 0 4px 7px #ffffff45,inset 0 -6px 9px #0006,0 2px 4px #0006;will-change:transform,opacity}
+.cell:active{cursor:grabbing}
+.cell.selected{outline:3px solid white;outline-offset:1px;z-index:1}
+.cell.grabbed{transform:scale(.72);opacity:.3;filter:saturate(.65)}
+.cell.roulette{outline:2px dashed #fff;outline-offset:-5px}
+.cell.roulette:after{content:'↻';position:absolute;right:1px;top:0;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;background:#171a2beF;color:white;font-size:12px;font-weight:900;line-height:1;box-shadow:0 1px 4px #0009}
+.orb-icon{font-size:clamp(24px,8vw,39px);line-height:1;filter:drop-shadow(0 2px 2px #0008)}
+.water{background:radial-gradient(circle at 34% 27%,#a9f0ff,#42a8f3 48%,#1454b1 100%)}
+.fire{background:radial-gradient(circle at 34% 27%,#fff0ae,#ff7548 48%,#b92326 100%)}
+.wood{background:radial-gradient(circle at 34% 27%,#e1ffc0,#79cd58 48%,#267539 100%)}
+.light{background:radial-gradient(circle at 34% 27%,#fffbd0,#ffe765 48%,#c28b13 100%)}
+.dark{background:radial-gradient(circle at 34% 27%,#e1c4ff,#9560dc 48%,#42216f 100%)}
+.heart{background:radial-gradient(circle at 34% 27%,#ffe2f0,#ff87c2 48%,#bd286e 100%)}
+.jammer{background:radial-gradient(circle at 34% 27%,#eef1f6,#9ba4b5 48%,#525b70 100%)}
+.poison{background:radial-gradient(circle at 34% 27%,#fbd4ff,#d34fe5 48%,#70118d 100%)}
+.bomb{background:radial-gradient(circle at 34% 27%,#fff0b0,#ffae3d 48%,#c34b1d 100%)}
+.clearing{animation:clear-pop 200ms ease-in forwards}
+@keyframes clear-pop{to{transform:scale(.15);opacity:0}}
+.falling{animation:fall-in 390ms cubic-bezier(.18,.72,.3,1) both}
+@keyframes fall-in{from{transform:translateY(var(--fall-from)) scale(.9);opacity:.65}to{transform:translateY(0) scale(1);opacity:1}}
+.actions{display:grid;grid-template-columns:1fr;gap:9px;margin-top:14px}
+button{min-height:44px;border:0;border-radius:12px;padding:11px 10px;font:600 14px system-ui,-apple-system,"Segoe UI",sans-serif;color:white;background:#333b5d;cursor:pointer;touch-action:manipulation}
+button.primary{background:linear-gradient(100deg,#8071f4,#a65fe1)}
+button.active{background:linear-gradient(100deg,#ed925b,#dc4e75)}
+button:active{transform:scale(.98)}
+.tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.tools button{flex:1 1 28%;font-size:12px;padding:10px 5px}
+.status{min-height:42px;margin:12px 2px 0;color:#d7d5ec;font-size:13px;line-height:1.6}
+.hint{margin:15px 2px 0;padding-top:13px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.7}
+.legend{display:flex;flex-wrap:wrap;gap:8px 13px;margin:12px 2px 2px;color:var(--muted);font-size:11px}
+.legend span{white-space:nowrap}.legend b{font-size:15px;vertical-align:-2px}
+.roulette-settings{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#11162988}
+.settings-title{font-weight:700;font-size:13px;margin-bottom:9px}
+.type-options{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.type-option{display:flex;align-items:center;gap:5px;min-width:0;padding:6px 7px;border-radius:9px;background:#282e48;color:#e8e8f5;font-size:12px}
+.type-option input{margin:0;accent-color:#a58cff}
+.interval-row{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:12px;color:var(--muted)}
+.interval-row select{flex:1;min-width:0;padding:8px;border:1px solid #485071;border-radius:9px;background:#222943;color:white;font:inherit}
+.size-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--muted)}
+.size-row select{flex:1;min-width:0;padding:8px;border:1px solid #485071;border-radius:9px;background:#222943;color:white;font:inherit}
+.held{position:fixed;z-index:10;display:none;width:68px;height:68px;border:2px solid #ffffffaa;border-radius:50%;place-items:center;pointer-events:none;opacity:.88;transform:translate(-50%,-125%) scale(1.08);box-shadow:0 8px 24px #000a,inset 0 5px 9px #ffffff70,inset 0 -7px 10px #0007;filter:saturate(1.1)}
+.held.visible{display:grid}.held .orb-icon{font-size:43px;line-height:1;filter:drop-shadow(0 3px 3px #0009)}
+@media(max-width:420px){.wrap{padding: max(16px,env(safe-area-inset-top)) 10px max(28px,env(safe-area-inset-bottom))}.card{padding:12px}.board{gap:3px;padding:5px}.orb-icon{font-size:clamp(19px,7.5vw,31px)}.tools button{flex-basis:29%;padding:9px 3px;font-size:11px}.type-options{grid-template-columns:repeat(3,minmax(0,1fr))}.type-option{font-size:11px;padding:7px 5px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <div class="eyebrow">DROP PUZZLE PRACTICE</div>
+    <h1>ドロップパズル練習</h1>
+    <p>盤面を動かして、消え方を試そう</p>
+  </header>
+  <section class="card" aria-label="パズル盤面">
+    <div class="stats"><span>盤面 <strong id="boardSizeLabel">6 × 5</strong></span><span id="count">移動 0 回</span></div>
+    <label class="size-row" for="boardSize">
+      <span>盤面サイズ</span>
+      <select id="boardSize">
+        <option value="5x4">5 × 4</option>
+        <option value="6x5" selected>6 × 5（通常）</option>
+        <option value="7x6">7 × 6</option>
+      </select>
+    </label>
+    <div id="board" class="board" role="grid" aria-label="ドロップ盤面"></div>
+    <div class="actions">
+      <button id="shuffle">盤面を作り直す</button>
+    </div>
+    <div class="tools">
+      <button data-add="fire">🔴 火</button>
+      <button data-add="water">🔵 水</button>
+      <button data-add="wood">🟢 木</button>
+      <button data-add="light">🟡 光</button>
+      <button data-add="dark">🟣 闇</button>
+      <button data-add="heart">💗 回復</button>
+      <button data-add="jammer">⚫ お邪魔</button>
+      <button data-add="poison">☠️ 毒</button>
+      <button data-add="bomb">💣 爆弾</button>
+      <button data-add="erase">消しゴム</button>
+      <button id="clear">盤面を空に</button>
+      <button id="addRoulette">＋ ルーレット</button>
+    </div>
+    <section class="roulette-settings" aria-label="ルーレット設定">
+      <div class="settings-title">ルーレットで変化するドロップ</div>
+      <div id="typeOptions" class="type-options"></div>
+      <label class="interval-row" for="interval">
+        <span>変化間隔</span>
+        <select id="interval">
+          <option value="2000">低速（2秒おき）</option>
+          <option value="1000" selected>通常（デフォルト・1秒おき）</option>
+          <option value="500">高速（0.5秒おき）</option>
+        </select>
+      </label>
+    </section>
+    <div id="status" class="status" aria-live="polite"></div>
+    <div class="legend">
+      <span><b>🔵</b> 水</span><span><b>🔴</b> 火</span><span><b>🟢</b> 木</span>
+      <span><b>🟡</b> 光</span><span><b>🟣</b> 闇</span><span><b>💗</b> 回復</span>
+      <span><b>⚫</b> お邪魔</span><span><b>☠️</b> 毒</span><span><b>💣</b> 爆弾</span>
+    </div>
+  </section>
+  <div class="footer">練習用ファンメイドアプリ</div>
+</main>
+<div id="held" class="held" aria-hidden="true"><span class="orb-icon"></span></div>
+<script>
+(() => {
+  let W = 6, H = 5, N = W * H;
+  const order = ['fire','water','wood','light','dark','heart','jammer','poison','bomb'];
+  const icon = {water:'🔵',fire:'🔴',wood:'🟢',light:'🟡',dark:'🟣',heart:'💗',jammer:'⚫',poison:'☠️',bomb:'💣'};
+  const label = {water:'水',fire:'火',wood:'木',light:'光',dark:'闇',heart:'回復',jammer:'お邪魔',poison:'毒',bomb:'爆弾'};
+  const defaultTypes = ['fire','water','wood','light','dark','heart'];
+  let enabledTypes = new Set(defaultTypes);
+  let cells = [], roulette = [], moves = 0, selected = -1, placing = null;
+  let drag = -1, dragged = false, placingRoulette = false, resolving = false, rouletteTimer = null;
+  const board = document.querySelector('#board');
+  const status = document.querySelector('#status');
+  const count = document.querySelector('#count');
+  const held = document.querySelector('#held');
+  const heldIcon = held.querySelector('.orb-icon');
+  const intervalSelect = document.querySelector('#interval');
+  const rouletteButton = document.querySelector('#addRoulette');
+  const typeOptions = document.querySelector('#typeOptions');
+  const boardSizeSelect = document.querySelector('#boardSize');
+  const boardSizeLabel = document.querySelector('#boardSizeLabel');
+
+  function say(text) { status.textContent = text; }
+  function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  function rand() { return order[Math.floor(Math.random() * 6)]; }
+
+  function buildTypeOptions() {
+    typeOptions.innerHTML = '';
+    order.forEach(type => {
+      const option = document.createElement('label');
+      option.className = 'type-option';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = type;
+      checkbox.checked = enabledTypes.has(type);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) enabledTypes.add(type);
+        else enabledTypes.delete(type);
+        if (enabledTypes.size === 0) {
+          checkbox.checked = true;
+          enabledTypes.add(type);
+          say('ルーレットには1種類以上のドロップを設定してください。');
+        } else {
+          say('ルーレットの対象ドロップを更新しました。');
+        }
+      });
+      const text = document.createElement('span');
+      text.textContent = icon[type] + ' ' + label[type];
+      option.append(checkbox, text);
+      typeOptions.append(option);
+    });
+  }
+
+  function draw(options = {}) {
+    const clearing = options.clearing || new Set();
+    const falls = options.falls || [];
+    const oldCell = board.querySelector('.cell');
+    const step = oldCell
+      ? oldCell.getBoundingClientRect().height + parseFloat(getComputedStyle(board).rowGap || 0)
+      : board.clientWidth / W;
+    board.innerHTML = '';
+
+    cells.forEach((type, index) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell ' + (type || 'empty');
+      if (roulette[index]) cell.classList.add('roulette');
+      if (index === drag) cell.classList.add('grabbed');
+      cell.dataset.i = index;
+      cell.setAttribute('role', 'gridcell');
+      cell.setAttribute('aria-label', type ? label[type] + 'ドロップ' + (roulette[index] ? '、ルーレット' : '') : '空');
+
+      if (type) {
+        const symbol = document.createElement('span');
+        symbol.className = 'orb-icon';
+        symbol.textContent = icon[type];
+        cell.append(symbol);
+      }
+      if (clearing.has(index)) cell.classList.add('clearing');
+      if (falls[index] > 0) {
+        cell.classList.add('falling');
+        cell.style.setProperty('--fall-from', `${-falls[index] * step}px`);
+      }
+      board.append(cell);
+    });
+  }
+
+  function matches() {
+    const matched = new Set();
+    for (let row = 0; row < H; row++) {
+      for (let col = 0; col < W; col++) {
+        const index = row * W + col;
+        const type = cells[index];
+        if (!type) continue;
+        let run = [index];
+        for (let x = col + 1; x < W && cells[row * W + x] === type; x++) run.push(row * W + x);
+        if (run.length >= 3) run.forEach(i => matched.add(i));
+        run = [index];
+        for (let y = row + 1; y < H && cells[y * W + col] === type; y++) run.push(y * W + col);
+        if (run.length >= 3) run.forEach(i => matched.add(i));
+      }
+    }
+    return matched;
+  }
+
+  function init() {
+    stopRouletteTimer();
+    cells = Array.from({length:N}, rand);
+    roulette = Array(N).fill(false);
+    while (matches().size > 0) cells = Array.from({length:N}, rand);
+    moves = 0;
+    selected = -1;
+    placing = null;
+    placingRoulette = false;
+    rouletteButton.classList.remove('active');
+    board.style.setProperty('--columns', W);
+    boardSizeLabel.textContent = W + ' × ' + H;
+    count.textContent = '移動 0 回';
+    say('ドロップを動かして離すと、そろったドロップが消えて落下・連鎖します。');
+    draw();
+  }
+
+  function nextRouletteType(current) {
+    const start = order.indexOf(current);
+    for (let step = 1; step <= order.length; step++) {
+      const candidate = order[(start + step + order.length) % order.length];
+      if (enabledTypes.has(candidate)) return candidate;
+    }
+    return current;
+  }
+
+  function startRouletteTimer() {
+    stopRouletteTimer();
+    if (!roulette.some(Boolean)) return;
+    rouletteTimer = setInterval(() => {
+      if (resolving) return;
+      roulette.forEach((active, index) => {
+        const heldOnThisRoulette = active && drag === index;
+        if (active && cells[index] && !heldOnThisRoulette) {
+          cells[index] = nextRouletteType(cells[index]);
+        }
+      });
+      draw();
+      if (drag >= 0) updateHeld();
+    }, Number(intervalSelect.value));
+  }
+
+  function stopRouletteTimer() {
+    if (rouletteTimer !== null) clearInterval(rouletteTimer);
+    rouletteTimer = null;
+  }
+
+  function toggleRoulette(index) {
+    if (!cells[index]) {
+      say('空のマスにはルーレットを置けません。');
+      return;
+    }
+    roulette[index] = !roulette[index];
+    draw();
+    say(roulette[index] ? label[cells[index]] + 'ドロップにルーレットを追加しました。' : 'このマスのルーレットを解除しました。');
+    startRouletteTimer();
+  }
+
+  let pointerX = 0, pointerY = 0;
+  function updateHeld(event) {
+    if (event) {
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+    }
+    if (drag < 0 || placing || placingRoulette || !cells[drag]) {
+      held.classList.remove('visible');
+      return;
+    }
+    const type = cells[drag];
+    heldIcon.textContent = icon[type];
+    heldIcon.className = 'orb-icon';
+    held.className = 'held visible ' + type;
+    held.style.left = pointerX + 'px';
+    held.style.top = pointerY + 'px';
+    held.classList.add('visible');
+  }
+
+  function moveAlongPath(destination) {
+    let x = drag % W, y = Math.floor(drag / W);
+    const x1 = destination % W, y1 = Math.floor(destination / W);
+    const dx = Math.abs(x1 - x), sx = x < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y), sy = y < y1 ? 1 : -1;
+    let error = dx + dy;
+    while (x !== x1 || y !== y1) {
+      const twiceError = 2 * error;
+      if (twiceError >= dy) { error += dy; x += sx; }
+      if (twiceError <= dx) { error += dx; y += sy; }
+      const next = y * W + x;
+      [cells[drag], cells[next]] = [cells[next], cells[drag]];
+      drag = next;
+    }
+    dragged = true;
+    selected = -1;
+    draw();
+  }
+
+  function cellIndex(event) {
+    const cell = event.target.closest('.cell');
+    return cell ? Number(cell.dataset.i) : -1;
+  }
+
+  function swap(a, b) {
+    if (selected >= 0) { a = selected; selected = -1; }
+    if (a === b) { selected = a; draw(); return; }
+    [cells[a], cells[b]] = [cells[b], cells[a]];
+    moves++;
+    count.textContent = '移動 ' + moves + ' 回';
+    draw();
+    resolve();
+  }
+
+  async function resolve() {
+    if (resolving) return;
+    resolving = true;
+    let totalCleared = 0, comboCount = 0, bombCount = 0;
+    try {
+      while (true) {
+        const gone = matches();
+        const bombs = [];
+        cells.forEach((type, index) => {
+          if (type === 'bomb' && !gone.has(index)) bombs.push(index);
+        });
+        for (const index of bombs) {
+          const row = Math.floor(index / W), col = index % W;
+          for (let x = 0; x < W; x++) gone.add(row * W + x);
+          for (let y = 0; y < H; y++) gone.add(y * W + col);
+        }
+        if (gone.size === 0) break;
+        comboCount++;
+        bombCount += bombs.length;
+        totalCleared += gone.size;
+        draw({clearing:gone});
+        await wait(200);
+        gone.forEach(index => { cells[index] = null; });
+
+        const falls = Array(N).fill(0);
+        for (let col = 0; col < W; col++) {
+          const survivors = [];
+          for (let row = H - 1; row >= 0; row--) {
+            const index = row * W + col;
+            if (cells[index]) survivors.push({type:cells[index], sourceRow:row});
+          }
+          let targetRow = H - 1;
+          for (const item of survivors) {
+            const target = targetRow * W + col;
+            cells[target] = item.type;
+            falls[target] = targetRow - item.sourceRow;
+            targetRow--;
+          }
+          while (targetRow >= 0) {
+            const target = targetRow * W + col;
+            cells[target] = rand();
+            falls[target] = targetRow + 1;
+            targetRow--;
+          }
+        }
+        draw({falls});
+        await wait(410);
+      }
+    } finally {
+      resolving = false;
+    }
+    draw();
+    startRouletteTimer();
+    if (!totalCleared) {
+      say('消えるドロップはありません。');
+      return;
+    }
+    let message = totalCleared + '個のドロップを消去';
+    if (comboCount > 1) message += '、' + comboCount + '連鎖';
+    if (bombCount > 0) message += '。爆弾 ' + bombCount + ' 個が爆発';
+    say(message + 'しました。');
+  }
+
+  board.addEventListener('pointerdown', event => {
+    if (resolving) return;
+    const index = cellIndex(event);
+    if (index < 0) return;
+    event.preventDefault();
+    if (placingRoulette) {
+      toggleRoulette(index);
+      return;
+    }
+    drag = index;
+    dragged = false;
+    board.setPointerCapture(event.pointerId);
+    draw();
+    updateHeld(event);
+  });
+
+  board.addEventListener('pointermove', event => {
+    if (drag < 0 || placing || placingRoulette || resolving) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.cell');
+    if (target) {
+      const index = Number(target.dataset.i);
+      if (index !== drag) moveAlongPath(index);
+    }
+    updateHeld(event);
+  });
+
+  board.addEventListener('pointerup', event => {
+    if (drag < 0) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.cell');
+    const endIndex = target ? Number(target.dataset.i) : drag;
+    const startIndex = drag;
+    held.classList.remove('visible');
+    drag = -1;
+
+    if (placing) {
+      cells[endIndex] = placing === 'erase' ? null : placing;
+      moves++;
+      count.textContent = '移動 ' + moves + ' 回';
+      say('盤面を編集しました。3個以上そろうと自動で消えます。');
+      draw();
+    } else if (dragged) {
+      moves++;
+      count.textContent = '移動 ' + moves + ' 回';
+      resolve();
+    } else {
+      swap(selected >= 0 ? selected : startIndex, selected >= 0 ? endIndex : startIndex);
+    }
+  });
+
+  document.querySelector('#shuffle').onclick = () => {
+    if (!resolving) init();
+  };
+  document.querySelector('#clear').onclick = () => {
+    if (resolving) return;
+    cells = Array(N).fill(null);
+    roulette = Array(N).fill(false);
+    selected = -1;
+    startRouletteTimer();
+    draw();
+    say('盤面を空にしました。');
+  };
+  document.querySelectorAll('[data-add]').forEach(button => {
+    button.onclick = () => {
+      if (resolving) return;
+      placing = placing === button.dataset.add ? null : button.dataset.add;
+      placingRoulette = false;
+      rouletteButton.classList.remove('active');
+      document.querySelectorAll('[data-add]').forEach(other => {
+        other.classList.toggle('primary', placing !== null && other === button);
+      });
+      if (!placing) say('盤面編集を終了しました。ドロップを動かせます。');
+      else say(placing === 'erase' ? '消したいマスをタップしてください。' : label[placing] + 'ドロップを置くマスをタップしてください。');
+    };
+  });
+  rouletteButton.onclick = () => {
+    if (resolving) return;
+    placing = null;
+    document.querySelectorAll('[data-add]').forEach(button => button.classList.remove('primary'));
+    placingRoulette = !placingRoulette;
+    rouletteButton.classList.toggle('active', placingRoulette);
+    say(placingRoulette ? 'ルーレットを置くドロップをタップしてください。続けて複数のマスに置けます。' : 'ルーレットの配置を終了しました。');
+  };
+  intervalSelect.addEventListener('change', () => {
+    startRouletteTimer();
+    say('ルーレットの変化間隔を更新しました。');
+  });
+  boardSizeSelect.addEventListener('change', () => {
+    const [width, height] = boardSizeSelect.value.split('x').map(Number);
+    W = width;
+    H = height;
+    N = W * H;
+    init();
+    say('盤面サイズを ' + W + ' × ' + H + ' に変更しました。');
+  });
+  buildTypeOptions();
+  init();
+})();
+</script>
+</body>
+</html>
