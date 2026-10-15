@@ -27,7 +27,7 @@ body{margin:0;min-height:100vh;min-height:100dvh;background:radial-gradient(elli
 .cell.selected{outline:3px solid white;outline-offset:1px;z-index:1}
 .cell.grabbed{transform:scale(.72);opacity:.3;filter:saturate(.65)}
 .cell.roulette{outline:2px dashed #fff;outline-offset:-5px}
-.cell.roulette:after{content:'↻';position:absolute;right:1px;top:0;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;background:#171a2bef;color:white;font-size:12px;font-weight:900;line-height:1;box-shadow:0 1px 4px #0009}
+.cell.roulette:after{content:'↻';position:absolute;right:1px;top:0;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;background:#171a2beF;color:white;font-size:12px;font-weight:900;line-height:1;box-shadow:0 1px 4px #0009}
 .orb-icon{font-size:clamp(24px,8vw,39px);line-height:1;filter:drop-shadow(0 2px 2px #0008)}
 .water{background:radial-gradient(circle at 34% 27%,#a9f0ff,#42a8f3 48%,#1454b1 100%)}
 .fire{background:radial-gradient(circle at 34% 27%,#fff0ae,#ff7548 48%,#b92326 100%)}
@@ -448,17 +448,32 @@ button:disabled{opacity:.45;cursor:default}
         if (gone.size === 0) break;
         bombCount += bombs.length;
         totalCleared += gone.size;
-        for (const group of matchGroups) {
-          draw({clearing:new Set(group)});
+
+        // 爆弾の十字消去を先に行う
+        const bombCleared = new Set();
+        bombs.sort(compareClearOrder);
+        for (const bomb of bombs) {
+          const row = Math.floor(bomb / W), col = bomb % W;
+          const blast = new Set();
+          for (let x = 0; x < W; x++) blast.add(row * W + x);
+          for (let y = 0; y < H; y++) blast.add(y * W + col);
+          const blastGroup = [...blast].filter(index => !bombCleared.has(index));
+          if (!blastGroup.length) continue;
+          draw({clearing:new Set(blastGroup)});
           await wait(180);
-          group.forEach(index => { cells[index] = null; });
+          blastGroup.forEach(index => {
+            cells[index] = null;
+            bombCleared.add(index);
+          });
         }
-        const matchedSet = new Set(matchGroups.flat());
-        const bombClears = [...gone].filter(index => !matchedSet.has(index)).sort(compareClearOrder);
-        for (const index of bombClears) {
-          draw({clearing:new Set([index])});
-          await wait(100);
-          cells[index] = null;
+
+        // 爆発後に残ったマッチグループを、グループごとにまとめて消す
+        for (const group of matchGroups) {
+          const remainingGroup = group.filter(index => cells[index] !== null);
+          if (!remainingGroup.length) continue;
+          draw({clearing:new Set(remainingGroup)});
+          await wait(180);
+          remainingGroup.forEach(index => { cells[index] = null; });
         }
 
         const falls = Array(N).fill(0);
@@ -543,7 +558,7 @@ button:disabled{opacity:.45;cursor:default}
       draw();
     } else if (dragged) {
       resolve();
-    } else {
+    } else if (!dragged) {
       selected = -1;
     }
   });
@@ -554,6 +569,7 @@ button:disabled{opacity:.45;cursor:default}
       init();
     }
   };
+
   document.querySelectorAll('[data-add]').forEach(button => {
     button.onclick = () => {
       if (resolving) return;
@@ -567,6 +583,7 @@ button:disabled{opacity:.45;cursor:default}
       else say(label[placing] + 'ドロップを置くマスをタップしてください。');
     };
   });
+
   rouletteButton.onclick = () => {
     if (resolving) return;
     placing = null;
@@ -575,10 +592,12 @@ button:disabled{opacity:.45;cursor:default}
     rouletteButton.classList.toggle('active', placingRoulette);
     say(placingRoulette ? 'ルーレットを置くドロップをタップしてください。続けて複数のマスに置けます。' : 'ルーレットの配置を終了しました。');
   };
+
   intervalSelect.addEventListener('change', () => {
     startRouletteTimer();
     say('ルーレットの変化間隔を更新しました。');
   });
+
   boardSizeSelect.addEventListener('change', () => {
     saveUndo();
     const [width, height] = boardSizeSelect.value.split('x').map(Number);
@@ -588,6 +607,7 @@ button:disabled{opacity:.45;cursor:default}
     init();
     say('盤面サイズを ' + W + ' × ' + H + ' に変更しました。');
   });
+
   undoButton.addEventListener('click', undo);
   buildTypeOptions();
   init();
