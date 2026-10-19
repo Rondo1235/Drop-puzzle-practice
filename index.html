@@ -27,7 +27,8 @@ body{margin:0;min-height:100vh;min-height:100dvh;background:radial-gradient(elli
 .cell.selected{outline:3px solid white;outline-offset:1px;z-index:1}
 .cell.grabbed{transform:scale(.72);opacity:.3;filter:saturate(.65)}
 .cell.roulette{outline:2px dashed #fff;outline-offset:-5px}
-.cell.roulette:after{content:'↻';position:absolute;right:1px;top:0;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;background:#171a2beF;color:white;font-size:12px;font-weight:900;line-height:1;box-shadow:0 1px 4px #0009}
+.roulette-hand{position:absolute;z-index:2;left:calc(50% - 1.5px);top:13%;width:3px;height:37%;border-radius:3px;background:#fff;box-shadow:0 0 5px #111,0 0 8px #fff;transform-origin:50% 100%;pointer-events:none}
+.cell.roulette:after{content:'';position:absolute;z-index:2;left:calc(50% - 3px);top:calc(50% - 3px);width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 5px #111;pointer-events:none}
 .orb-icon{font-size:clamp(24px,8vw,39px);line-height:1;filter:drop-shadow(0 2px 2px #0008)}
 .water{background:radial-gradient(circle at 34% 27%,#a9f0ff,#42a8f3 48%,#1454b1 100%)}
 .fire{background:radial-gradient(circle at 34% 27%,#fff0ae,#ff7548 48%,#b92326 100%)}
@@ -87,6 +88,7 @@ button:disabled{opacity:.45;cursor:default}
     <div id="board" class="board" role="grid" aria-label="ドロップ盤面"></div>
     <div class="actions">
       <button id="shuffle">盤面を作り直す</button>
+      <button id="noSkyfall" aria-pressed="false">落ちコンなし：OFF</button>
     </div>
     <div class="tools">
       <button data-add="fire">🔴 火</button>
@@ -127,7 +129,9 @@ button:disabled{opacity:.45;cursor:default}
   let enabledTypes = new Set(defaultTypes);
   let cells = [], roulette = [], cellElements = [], selected = -1, placing = null;
   let history = [];
-  let drag = -1, dragged = false, placingRoulette = false, resolving = false, rouletteTimer = null;
+  let drag = -1, dragged = false, placingRoulette = false, resolving = false, rouletteTimer = null, rouletteStartedAt = 0;
+  let noSkyfall = false;
+  let rouletteAnimations = [];
   let drawFrame = 0;
   const board = document.querySelector('#board');
   const status = document.querySelector('#status');
@@ -218,6 +222,8 @@ button:disabled{opacity:.45;cursor:default}
       : board.clientWidth / W;
 
     if (cellElements.length !== cells.length) {
+      rouletteAnimations.forEach(animation => animation?.cancel());
+      rouletteAnimations = Array(cells.length).fill(null);
       board.replaceChildren();
       cellElements = Array.from({length:cells.length}, () => {
         const cell = document.createElement('div');
@@ -230,7 +236,22 @@ button:disabled{opacity:.45;cursor:default}
     cells.forEach((type, index) => {
       const cell = cellElements[index];
       cell.className = 'cell ' + (type || 'empty');
-      if (roulette[index]) cell.classList.add('roulette');
+      if (roulette[index]) {
+        cell.classList.add('roulette');
+        let hand = cell.querySelector('.roulette-hand');
+        if (!hand) {
+          hand = document.createElement('span');
+          hand.className = 'roulette-hand';
+          cell.append(hand);
+        }
+        if (!rouletteAnimations[index] || rouletteAnimations[index].playState === 'idle') {
+          startRouletteHand(index);
+        }
+      } else {
+        rouletteAnimations[index]?.cancel();
+        rouletteAnimations[index] = null;
+        cell.querySelector('.roulette-hand')?.remove();
+      }
       if (index === drag) cell.classList.add('grabbed');
       cell.dataset.i = index;
       cell.setAttribute('aria-label', type ? label[type] + 'ドロップ' + (roulette[index] ? '、ルーレット' : '') : '空');
@@ -310,6 +331,7 @@ button:disabled{opacity:.45;cursor:default}
 
   function init() {
     stopRouletteTimer();
+    rouletteStartedAt = 0;
     cells = Array.from({length:N}, rand);
     roulette = Array(N).fill(false);
     while (matches().size > 0) cells = Array.from({length:N}, rand);
@@ -332,9 +354,23 @@ button:disabled{opacity:.45;cursor:default}
     return current;
   }
 
-  function startRouletteTimer() {
+  function startRouletteTimer(reset = false) {
+    if (!roulette.some(Boolean)) {
+      stopRouletteTimer();
+      rouletteStartedAt = 0;
+      draw();
+      return;
+    }
+    if (rouletteTimer !== null && !reset) {
+      draw();
+      return;
+    }
     stopRouletteTimer();
-    if (!roulette.some(Boolean)) return;
+    if (reset || !rouletteStartedAt) {
+      rouletteStartedAt = performance.now();
+    }
+    draw();
+    if (reset || !rouletteStartedAt) resetRouletteHands();
     rouletteTimer = setInterval(() => {
       if (resolving) return;
       roulette.forEach((active, index) => {
@@ -346,6 +382,28 @@ button:disabled{opacity:.45;cursor:default}
       draw();
       if (drag >= 0) updateHeld();
     }, Number(intervalSelect.value));
+  }
+
+  function startRouletteHand(index, reset = false) {
+    const hand = cellElements[index]?.querySelector('.roulette-hand');
+    if (!hand) return;
+    rouletteAnimations[index]?.cancel();
+    const duration = Number(intervalSelect.value);
+    const animation = hand.animate(
+      [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],
+      {duration,iterations:Infinity,easing:'linear'}
+    );
+    if (!reset && rouletteStartedAt) {
+      animation.currentTime = (performance.now() - rouletteStartedAt) % duration;
+    }
+    rouletteAnimations[index] = animation;
+  }
+
+  function resetRouletteHands() {
+    rouletteAnimations.forEach((animation, index) => {
+      if (roulette[index]) startRouletteHand(index, true);
+      else animation?.cancel();
+    });
   }
 
   function stopRouletteTimer() {
@@ -360,9 +418,8 @@ button:disabled{opacity:.45;cursor:default}
     }
     saveUndo();
     roulette[index] = !roulette[index];
-    draw();
     say(roulette[index] ? label[cells[index]] + 'ドロップにルーレットを追加しました。' : 'このマスのルーレットを解除しました。');
-    startRouletteTimer();
+    startRouletteTimer(roulette[index]);
   }
 
   let pointerX = 0, pointerY = 0;
@@ -449,7 +506,6 @@ button:disabled{opacity:.45;cursor:default}
         bombCount += bombs.length;
         totalCleared += gone.size;
 
-        // 爆弾の十字消去を先に行う
         const bombCleared = new Set();
         bombs.sort(compareClearOrder);
         for (const bomb of bombs) {
@@ -467,7 +523,6 @@ button:disabled{opacity:.45;cursor:default}
           });
         }
 
-        // 爆発後に残ったマッチグループを、グループごとにまとめて消す
         for (const group of matchGroups) {
           const remainingGroup = group.filter(index => cells[index] !== null);
           if (!remainingGroup.length) continue;
@@ -492,8 +547,13 @@ button:disabled{opacity:.45;cursor:default}
           }
           while (targetRow >= 0) {
             const target = targetRow * W + col;
-            cells[target] = rand();
-            falls[target] = targetRow + 1;
+            if (noSkyfall) {
+              cells[target] = null;
+              falls[target] = 0;
+            } else {
+              cells[target] = rand();
+              falls[target] = targetRow + 1;
+            }
             targetRow--;
           }
         }
@@ -570,6 +630,14 @@ button:disabled{opacity:.45;cursor:default}
     }
   };
 
+  document.querySelector('#noSkyfall').onclick = event => {
+    noSkyfall = !noSkyfall;
+    event.currentTarget.textContent = '落ちコンなし：' + (noSkyfall ? 'ON' : 'OFF');
+    event.currentTarget.setAttribute('aria-pressed', String(noSkyfall));
+    event.currentTarget.classList.toggle('active', noSkyfall);
+    say(noSkyfall ? '落ちコンなしを有効にしました。消去後、新しいドロップは補充されません。' : '落ちコンなしを解除しました。消去後、新しいドロップが補充されます。');
+  };
+
   document.querySelectorAll('[data-add]').forEach(button => {
     button.onclick = () => {
       if (resolving) return;
@@ -594,7 +662,7 @@ button:disabled{opacity:.45;cursor:default}
   };
 
   intervalSelect.addEventListener('change', () => {
-    startRouletteTimer();
+    startRouletteTimer(true);
     say('ルーレットの変化間隔を更新しました。');
   });
 
