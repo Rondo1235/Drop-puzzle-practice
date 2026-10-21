@@ -83,7 +83,13 @@ button:disabled{opacity:.45;cursor:default}
 .saved-row button{min-height:38px;padding:8px;font-size:12px}
 .held{position:fixed;z-index:10;display:none;width:68px;height:68px;border:2px solid #ffffffaa;border-radius:50%;place-items:center;pointer-events:none;opacity:.88;transform:translate(-50%,-50%) scale(1.08);box-shadow:0 8px 24px #000a,inset 0 5px 9px #ffffff70,inset 0 -7px 10px #0007;filter:saturate(1.1)}
 .held.visible{display:grid}.held .orb-icon{font-size:43px;line-height:1;filter:drop-shadow(0 3px 3px #0009)}
-@media(max-width:420px){.wrap{padding:max(16px,env(safe-area-inset-top)) 10px max(28px,env(safe-area-inset-bottom))}.card{padding:12px}.board{gap:3px;padding:5px}.orb-icon{font-size:clamp(19px,7.5vw,31px)}.tools button{flex-basis:29%;padding:9px 3px;font-size:11px}.type-options{grid-template-columns:repeat(3,minmax(0,1fr))}.type-option{font-size:11px;padding:7px 5px}}
+@media(max-width:420px){.wrap{padding:max(16px,env(safe-area-inset-top)) 10px max(28px,env(safe-area-inset-bottom))}.card{padding:12px}.board{gap:3px;padding:5px}.orb-icon{font-size:clamp(19px,7.5vw,31px);filter:none}
+.cell{box-shadow:inset 0 2px 4px #ffffff35,inset 0 -3px 5px #0005}
+.cell.grabbed,.cell.clearing,.cell.falling{will-change:auto}
+.cell.grabbed{filter:none}
+.tools button{flex-basis:29%;padding:9px 3px;font-size:11px}
+.type-options{grid-template-columns:repeat(3,minmax(0,1fr))}
+.type-option{font-size:11px;padding:7px 5px}}
 </style>
 </head>
 <body>
@@ -609,11 +615,10 @@ button:disabled{opacity:.45;cursor:default}
     }
     const clearing = options.clearing || new Set();
     const falls = options.falls || [];
-    const firstCell = cellElements[0];
-    const step = firstCell
-      ? firstCell.getBoundingClientRect().height + parseFloat(getComputedStyle(board).rowGap || 0)
-      : board.clientWidth / W;
-
+    const hasFalls = falls.some(distance => distance > 0);
+    const firstCell = hasFalls ? cellElements[0] : null;
+    const step = !hasFalls ? 0 : firstCell ? firstCell.getBoundingClientRect().height +
+    parseFloat(getComputedStyle(board).rowGap || 0) : board.clientWidth / W;
     if (cellElements.length !== cells.length) {
       rouletteAnimations.forEach(animation => animation?.cancel());
       rouletteAnimations = Array(cells.length).fill(null);
@@ -632,7 +637,7 @@ button:disabled{opacity:.45;cursor:default}
       routeOverlay.setAttribute('class', 'route-overlay');
       routeOverlay.setAttribute('aria-hidden', 'true');
     }
-    board.append(routeOverlay);
+    if (routeOverlay.parentElement !== board) board.append(routeOverlay);
 
     cells.forEach((type, index) => {
       const cell = cellElements[index];
