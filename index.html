@@ -51,15 +51,21 @@ button:active{transform:scale(.98)}
 .tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .tools button{flex:1 1 30%;font-size:12px;padding:10px 5px}
 button:disabled{opacity:.45;cursor:default}
-.status{min-height:42px;margin:12px 2px 0;color:#d7d5ec;font-size:13px;line-height:1.6}
+.top-message{margin:0 0 12px;padding:10px 12px;border:1px solid #ffffff24;border-radius:10px;background:#111629;color:#e8e8f5;font-size:13px;font-weight:600;line-height:1.5}
+.top-message:empty{display:none}
+.top-message.error{border-color:#ff7272;background:#641f2ddd;color:#fff;font-size:14px;font-weight:700}
+.top-message.success{border-color:#64dba0;background:#174d3add;color:#eafff3;font-size:14px;font-weight:700}
+.status{color:#d7d5ec;font-size:13px;line-height:1.6}
 .hint{margin:15px 2px 0;padding-top:13px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.7}
 .legend{display:flex;flex-wrap:wrap;gap:8px 13px;margin:12px 2px 2px;color:var(--muted);font-size:11px}
 .legend span{white-space:nowrap}.legend b{font-size:15px;vertical-align:-2px}
 .roulette-settings{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#11162988}
 .settings-title{font-weight:700;font-size:13px;margin-bottom:9px}
 .type-options{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.generation-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 .type-option{display:flex;align-items:center;gap:5px;min-width:0;padding:6px 7px;border-radius:9px;background:#282e48;color:#e8e8f5;font-size:12px}
 .type-option input{margin:0;accent-color:#a58cff}
+.type-option select{flex:1;min-width:0;padding:6px 4px;border:1px solid #485071;border-radius:7px;background:#222943;color:white;font:inherit}
 .interval-row{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:12px;color:var(--muted)}
 .interval-row select{flex:1;min-width:0;padding:8px;border:1px solid #485071;border-radius:9px;background:#222943;color:white;font:inherit}
 .size-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--muted)}
@@ -76,6 +82,7 @@ button:disabled{opacity:.45;cursor:default}
     <h1>ドロップパズル練習</h1>
   </header>
   <section class="card" aria-label="パズル盤面">
+    <div id="status" class="top-message" role="status" aria-live="polite"></div>
     <div class="stats"><span>盤面 <strong id="boardSizeLabel">6 × 5</strong></span></div>
     <label class="size-row" for="boardSize">
       <span>盤面サイズ</span>
@@ -103,6 +110,14 @@ button:disabled{opacity:.45;cursor:default}
       <button id="undo" disabled>↶ 1つ戻す</button>
       <button id="addRoulette">＋ ルーレット</button>
     </div>
+    <section class="roulette-settings" aria-label="ドロップ生成数設定">
+      <div class="settings-title">盤面を作り直すときの生成数</div>
+      <div class="status" style="min-height:0;margin:0 0 9px">1回目の生成後、残りのマスに2回目のドロップを生成します。各回とも「ランダム」または0〜盤面のマス数を指定できます。</div>
+      <div class="settings-title">1回目の生成指定</div>
+      <div id="generationOptions1" class="generation-options"></div>
+      <div class="settings-title" style="margin-top:12px">2回目の生成指定</div>
+      <div id="generationOptions2" class="generation-options"></div>
+    </section>
     <section class="roulette-settings" aria-label="ルーレット設定">
       <div class="settings-title">ルーレットで変化するドロップ</div>
       <div id="typeOptions" class="type-options"></div>
@@ -115,7 +130,6 @@ button:disabled{opacity:.45;cursor:default}
         </select>
       </label>
     </section>
-    <div id="status" class="status" aria-live="polite"></div>
   </section>
 </main>
 <div id="held" class="held" aria-hidden="true"><span class="orb-icon"></span></div>
@@ -129,9 +143,13 @@ button:disabled{opacity:.45;cursor:default}
   let enabledTypes = new Set(defaultTypes);
   let cells = [], roulette = [], cellElements = [], selected = -1, placing = null;
   let history = [];
-  let drag = -1, dragged = false, placingRoulette = false, resolving = false, rouletteTimer = null, rouletteStartedAt = 0;
+  let drag = -1, dragged = false, placingRoulette = false, resolving = false, generatingBoard = false, rouletteTimer = null, rouletteStartedAt = 0;
   let noSkyfall = false;
   let rouletteAnimations = [];
+  const generationCounts = [
+    Object.fromEntries(order.map(type => [type, ['fire','water','wood','light','dark','heart'].includes(type) ? 'random' : 0])),
+    Object.fromEntries(order.map(type => [type, 0]))
+  ];
   let drawFrame = 0;
   const board = document.querySelector('#board');
   const status = document.querySelector('#status');
@@ -140,6 +158,10 @@ button:disabled{opacity:.45;cursor:default}
   const intervalSelect = document.querySelector('#interval');
   const rouletteButton = document.querySelector('#addRoulette');
   const typeOptions = document.querySelector('#typeOptions');
+  const generationOptions = [
+    document.querySelector('#generationOptions1'),
+    document.querySelector('#generationOptions2')
+  ];
   const boardSizeSelect = document.querySelector('#boardSize');
   const boardSizeLabel = document.querySelector('#boardSizeLabel');
   const undoButton = document.querySelector('#undo');
@@ -159,6 +181,7 @@ button:disabled{opacity:.45;cursor:default}
     W = previous.W;
     H = previous.H;
     N = W * H;
+    buildGenerationOptions();
     boardSizeSelect.value = W + 'x' + H;
     board.style.setProperty('--columns', W);
     boardSizeLabel.textContent = W + ' × ' + H;
@@ -171,9 +194,183 @@ button:disabled{opacity:.45;cursor:default}
     say('直前の盤面に戻しました。');
   }
 
-  function say(text) { status.textContent = text; }
+  function say(text, kind = '') {
+    status.textContent = text;
+    status.className = 'top-message' + (kind ? ' ' + kind : '');
+    status.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    status.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
+  }
   function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-  function rand() { return order[Math.floor(Math.random() * 6)]; }
+  function randInitial() { return order[Math.floor(Math.random() * 6)]; }
+  function shuffleArray(items) {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
+  function getGenerationPlan() {
+    const counts = generationCounts.map(settings => Object.fromEntries(
+      order.map(type => [type, settings[type] === 'random' ? 3 : Number(settings[type])])
+    ));
+    const randomSlots = [];
+    generationCounts.forEach((settings, passIndex) => {
+      order.forEach(type => {
+        if (settings[type] === 'random') randomSlots.push({passIndex, type});
+      });
+    });
+    let used = counts.reduce((sum, pass) => sum + Object.values(pass).reduce((a, b) => a + b, 0), 0);
+
+    while (used < N && randomSlots.length) {
+      const slot = randomSlots[Math.floor(Math.random() * randomSlots.length)];
+      counts[slot.passIndex][slot.type]++;
+      used++;
+    }
+
+    if (used < N) {
+      const selectedTypes = order.filter(type => generationCounts.some(pass => pass[type] !== 0));
+      const fillers = selectedTypes.length ? selectedTypes : order.slice(0, 6);
+      const hasSecondPassSettings = order.some(type => {
+        const setting = generationCounts[1][type];
+        return setting === 'random' || Number(setting) > 0;
+      });
+      const fillPass = hasSecondPassSettings ? 1 : 0;
+      while (used < N) {
+        const type = fillers[Math.floor(Math.random() * fillers.length)];
+        counts[fillPass][type]++;
+        used++;
+      }
+    }
+
+    let excess = counts.reduce((sum, pass) => sum + Object.values(pass).reduce((a, b) => a + b, 0), 0) - N;
+    for (let passIndex = 1; passIndex >= 0 && excess > 0; passIndex--) {
+      for (const type of [...order].reverse()) {
+        const minimum = generationCounts[passIndex][type] === 'random' ? 3 : 0;
+        const reduction = Math.min(excess, Math.max(0, counts[passIndex][type] - minimum));
+        counts[passIndex][type] -= reduction;
+        excess -= reduction;
+        if (!excess) break;
+      }
+    }
+    for (let passIndex = 1; passIndex >= 0 && excess > 0; passIndex--) {
+      for (const type of [...order].reverse()) {
+        if (generationCounts[passIndex][type] !== 'random') continue;
+        const reduction = Math.min(excess, counts[passIndex][type]);
+        counts[passIndex][type] -= reduction;
+        excess -= reduction;
+        if (!excess) break;
+      }
+    }
+    return counts;
+  }
+
+  function makePassItems(passIndex, plan) {
+    const items = [];
+    order.forEach(type => {
+      for (let i = 0; i < plan[passIndex][type]; i++) items.push(type);
+    });
+    return shuffleArray(items);
+  }
+
+  function getGenerationError() {
+    const fullWidthBoardCounts = {20:'20',30:'30',42:'42'};
+    for (let passIndex = 0; passIndex < generationCounts.length; passIndex++) {
+      const settings = generationCounts[passIndex];
+      const hasRandom = order.some(type => settings[type] === 'random');
+      if (hasRandom) continue;
+      const total = order.reduce((sum, type) => sum + Number(settings[type]), 0);
+      if (total > N) {
+        return (passIndex + 1) + '回目の生成する個数の合計が' + fullWidthBoardCounts[N] + 'を超えています';
+      }
+    }
+    return '';
+  }
+
+  function placePass(items) {
+    const emptyCells = shuffleArray(cells
+      .map((type, index) => type === null ? index : -1)
+      .filter(index => index >= 0));
+    items.slice(0, emptyCells.length).forEach((type, index) => {
+      cells[emptyCells[index]] = type;
+    });
+  }
+
+  async function remakeConfiguredBoard() {
+    if (resolving || generatingBoard) return;
+    generatingBoard = true;
+    say('');
+    document.querySelector('#shuffle').disabled = true;
+    boardSizeSelect.disabled = true;
+    try {
+      stopRouletteTimer();
+      rouletteStartedAt = 0;
+      const plan = getGenerationPlan();
+      cells = Array(N).fill(null);
+      roulette = Array(N).fill(false);
+      selected = -1;
+      placing = null;
+      placingRoulette = false;
+      rouletteButton.classList.remove('active');
+      board.style.setProperty('--columns', W);
+      boardSizeLabel.textContent = W + ' × ' + H;
+
+      placePass(makePassItems(0, plan));
+      draw();
+      const hasSecondPass = order.some(type => {
+        const setting = generationCounts[1][type];
+        return setting === 'random' || Number(setting) > 0;
+      });
+      if (hasSecondPass) {
+        say('1回目のドロップを生成しました。1秒後に2回目を生成します。');
+        await wait(1000);
+        placePass(makePassItems(1, plan));
+        draw();
+      }
+      say('盤面の生成が完了しました。ドロップを動かしてパズルできます。');
+    } finally {
+      generatingBoard = false;
+      document.querySelector('#shuffle').disabled = false;
+      boardSizeSelect.disabled = false;
+    }
+  }
+
+  function refillRandomEmptyCells(falls) {
+    cells.forEach((type, index) => {
+      if (type === null) {
+        cells[index] = randInitial();
+        falls[index] = Math.floor(index / W) + 1;
+      }
+    });
+  }
+
+  function buildGenerationOptions() {
+    generationOptions.forEach((container, passIndex) => {
+      container.innerHTML = '';
+      order.forEach(type => {
+        let value = generationCounts[passIndex][type];
+        if (value !== 'random' && Number(value) > N) {
+          value = N;
+          generationCounts[passIndex][type] = N;
+        }
+        const option = document.createElement('label');
+        option.className = 'type-option generation-option';
+        const name = document.createElement('span');
+        name.textContent = icon[type] + ' ' + label[type];
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', (passIndex + 1) + '回目の' + label[type] + '生成数');
+        select.add(new Option('ランダム', 'random'));
+        for (let count = 0; count <= N; count++) select.add(new Option(String(count), String(count)));
+        select.value = String(value);
+        select.addEventListener('change', () => {
+          generationCounts[passIndex][type] = select.value === 'random' ? 'random' : Number(select.value);
+        });
+        option.append(name, select);
+        container.append(option);
+      });
+    });
+  }
+
   function scheduleDraw() {
     if (drawFrame) return;
     drawFrame = requestAnimationFrame(() => {
@@ -332,9 +529,9 @@ button:disabled{opacity:.45;cursor:default}
   function init() {
     stopRouletteTimer();
     rouletteStartedAt = 0;
-    cells = Array.from({length:N}, rand);
+    cells = Array.from({length:N}, randInitial);
+    while (matches().size > 0) cells = Array.from({length:N}, randInitial);
     roulette = Array(N).fill(false);
-    while (matches().size > 0) cells = Array.from({length:N}, rand);
     selected = -1;
     placing = null;
     placingRoulette = false;
@@ -505,7 +702,6 @@ button:disabled{opacity:.45;cursor:default}
         if (gone.size === 0) break;
         bombCount += bombs.length;
         totalCleared += gone.size;
-
         const bombCleared = new Set();
         bombs.sort(compareClearOrder);
         for (const bomb of bombs) {
@@ -547,16 +743,12 @@ button:disabled{opacity:.45;cursor:default}
           }
           while (targetRow >= 0) {
             const target = targetRow * W + col;
-            if (noSkyfall) {
-              cells[target] = null;
-              falls[target] = 0;
-            } else {
-              cells[target] = rand();
-              falls[target] = targetRow + 1;
-            }
+            cells[target] = null;
+            falls[target] = 0;
             targetRow--;
           }
         }
+        if (!noSkyfall) refillRandomEmptyCells(falls);
         draw({falls});
         await wait(410);
       }
@@ -569,13 +761,13 @@ button:disabled{opacity:.45;cursor:default}
       say('消えるドロップはありません。');
       return;
     }
-    let message = totalCleared + '個のドロップを消去、' + comboCount + 'コンボ';
-    if (bombCount > 0) message += '。爆弾 ' + bombCount + ' 個が爆発';
-    say(message + 'しました。');
+    let message = totalCleared + '個のドロップを消去。' + comboCount + 'コンボしました。';
+    if (bombCount > 0) message += '（爆弾 ' + bombCount + ' 個が爆発）';
+    say(message, 'success');
   }
 
   board.addEventListener('pointerdown', event => {
-    if (resolving) return;
+    if (resolving || generatingBoard) return;
     const index = cellIndex(event);
     if (index < 0) return;
     event.preventDefault();
@@ -618,15 +810,20 @@ button:disabled{opacity:.45;cursor:default}
       draw();
     } else if (dragged) {
       resolve();
-    } else if (!dragged) {
+    } else {
       selected = -1;
     }
   });
 
-  document.querySelector('#shuffle').onclick = () => {
-    if (!resolving) {
+  document.querySelector('#shuffle').onclick = async () => {
+    if (!resolving && !generatingBoard) {
+      const error = getGenerationError();
+      if (error) {
+        say(error, 'error');
+        return;
+      }
       saveUndo();
-      init();
+      await remakeConfiguredBoard();
     }
   };
 
@@ -640,7 +837,7 @@ button:disabled{opacity:.45;cursor:default}
 
   document.querySelectorAll('[data-add]').forEach(button => {
     button.onclick = () => {
-      if (resolving) return;
+      if (resolving || generatingBoard) return;
       placing = placing === button.dataset.add ? null : button.dataset.add;
       placingRoulette = false;
       rouletteButton.classList.remove('active');
@@ -653,7 +850,7 @@ button:disabled{opacity:.45;cursor:default}
   });
 
   rouletteButton.onclick = () => {
-    if (resolving) return;
+    if (resolving || generatingBoard) return;
     placing = null;
     document.querySelectorAll('[data-add]').forEach(button => button.classList.remove('primary'));
     placingRoulette = !placingRoulette;
@@ -667,17 +864,20 @@ button:disabled{opacity:.45;cursor:default}
   });
 
   boardSizeSelect.addEventListener('change', () => {
+    if (generatingBoard) return;
     saveUndo();
     const [width, height] = boardSizeSelect.value.split('x').map(Number);
     W = width;
     H = height;
     N = W * H;
+    buildGenerationOptions();
     init();
     say('盤面サイズを ' + W + ' × ' + H + ' に変更しました。');
   });
 
   undoButton.addEventListener('click', undo);
   buildTypeOptions();
+  buildGenerationOptions();
   init();
 })();
 </script>
