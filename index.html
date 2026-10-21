@@ -70,6 +70,11 @@ button:disabled{opacity:.45;cursor:default}
 .interval-row select{flex:1;min-width:0;padding:8px;border:1px solid #485071;border-radius:9px;background:#222943;color:white;font:inherit}
 .size-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--muted)}
 .size-row select{flex:1;min-width:0;padding:8px;border:1px solid #485071;border-radius:9px;background:#222943;color:white;font:inherit}
+.saved-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:10px}
+.saved-row input,.saved-row select{min-width:0;padding:8px;border:1px solid #485071;border-radius:9px;background:#222943;color:white;font:inherit}
+.saved-row input::placeholder{color:#aab1cd}
+.saved-name,.saved-select{grid-column:span 2}
+.saved-row button{min-height:38px;padding:8px;font-size:12px}
 .held{position:fixed;z-index:10;display:none;width:68px;height:68px;border:2px solid #ffffffaa;border-radius:50%;place-items:center;pointer-events:none;opacity:.88;transform:translate(-50%,-50%) scale(1.08);box-shadow:0 8px 24px #000a,inset 0 5px 9px #ffffff70,inset 0 -7px 10px #0007;filter:saturate(1.1)}
 .held.visible{display:grid}.held .orb-icon{font-size:43px;line-height:1;filter:drop-shadow(0 3px 3px #0009)}
 @media(max-width:420px){.wrap{padding:max(16px,env(safe-area-inset-top)) 10px max(28px,env(safe-area-inset-bottom))}.card{padding:12px}.board{gap:3px;padding:5px}.orb-icon{font-size:clamp(19px,7.5vw,31px)}.tools button{flex-basis:29%;padding:9px 3px;font-size:11px}.type-options{grid-template-columns:repeat(3,minmax(0,1fr))}.type-option{font-size:11px;padding:7px 5px}}
@@ -83,7 +88,7 @@ button:disabled{opacity:.45;cursor:default}
   </header>
   <section class="card" aria-label="パズル盤面">
     <div id="status" class="top-message" role="status" aria-live="polite"></div>
-    <div class="stats"><span>盤面 <strong id="boardSizeLabel">6 × 5</strong></span></div>
+    <div class="stats"><span>盤面 <strong id="boardSizeLabel">6 × 5</strong></span><span>手数 <strong id="moveCountLabel">0</strong></span></div>
     <label class="size-row" for="boardSize">
       <span>盤面サイズ</span>
       <select id="boardSize">
@@ -110,9 +115,16 @@ button:disabled{opacity:.45;cursor:default}
       <button id="undo" disabled>↶ 1つ戻す</button>
       <button id="addRoulette">＋ ルーレット</button>
     </div>
+    <div class="saved-row" aria-label="保存した盤面">
+      <input id="savedBoardName" class="saved-name" type="text" maxlength="30" placeholder="保存する盤面の名前" aria-label="保存する盤面の名前">
+      <select id="savedBoards" class="saved-select" aria-label="保存した盤面を選択"><option value="">保存した盤面</option></select>
+      <button id="saveBoard">保存</button>
+      <button id="loadBoard">実行</button>
+      <button id="deleteBoard">削除</button>
+    </div>
     <section class="roulette-settings" aria-label="ドロップ生成数設定">
       <div class="settings-title">盤面を作り直すときの生成数</div>
-      <div class="status" style="min-height:0;margin:0 0 9px">1回目の生成後、残りのマスに2回目のドロップを生成します。各回とも「ランダム」または0〜盤面のマス数を指定できます。</div>
+      <div class="status" style="min-height:0;margin:0 0 9px">1回目の生成後、残りのマスに2回目のドロップを生成します。各回とも「ランダム」または0〜最大値を設定できます。</div>
       <div class="settings-title">1回目の生成指定</div>
       <div id="generationOptions1" class="generation-options"></div>
       <div class="settings-title" style="margin-top:12px">2回目の生成指定</div>
@@ -144,6 +156,7 @@ button:disabled{opacity:.45;cursor:default}
   let cells = [], roulette = [], cellElements = [], selected = -1, placing = null;
   let history = [];
   let drag = -1, dragged = false, placingRoulette = false, resolving = false, generatingBoard = false, rouletteTimer = null, rouletteStartedAt = 0;
+  let moveCount = 0;
   let noSkyfall = false;
   let rouletteAnimations = [];
   const generationCounts = [
@@ -165,10 +178,112 @@ button:disabled{opacity:.45;cursor:default}
   const boardSizeSelect = document.querySelector('#boardSize');
   const boardSizeLabel = document.querySelector('#boardSizeLabel');
   const undoButton = document.querySelector('#undo');
+  const moveCountLabel = document.querySelector('#moveCountLabel');
+  const savedBoardSelect = document.querySelector('#savedBoards');
+  const savedBoardName = document.querySelector('#savedBoardName');
+  const savedBoardsKey = 'dropPuzzleSavedBoardsV1';
+
+  function readSavedBoards() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(savedBoardsKey) || '[]');
+      return Array.isArray(saved) ? saved.filter(item => item && typeof item.name === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function refreshSavedBoards(selectedId = '') {
+    const saved = readSavedBoards();
+    savedBoardSelect.replaceChildren(new Option('デフォルト', ''));
+    saved.forEach(item => {
+      savedBoardSelect.add(new Option(item.name, item.id));
+    });
+    if (selectedId && saved.some(item => item.id === selectedId)) savedBoardSelect.value = selectedId;
+  }
+
+  function saveCurrentBoard() {
+    if (resolving || generatingBoard) return;
+    const cleanName = savedBoardName.value.trim();
+    if (!cleanName) {
+      say('保存する盤面の名前を入力してください。', 'error');
+      savedBoardName.focus();
+      return;
+    }
+    const saved = readSavedBoards();
+    const existing = saved.find(item => item.name === cleanName);
+    const item = {
+      id: existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+      name: cleanName,
+      width: W,
+      height: H,
+      cells: cells.slice(),
+      roulette: roulette.slice(),
+      savedAt: Date.now()
+    };
+    const next = existing ? saved.map(entry => entry.id === item.id ? item : entry) : [...saved, item];
+    try {
+      localStorage.setItem(savedBoardsKey, JSON.stringify(next));
+      refreshSavedBoards(item.id);
+      say('「' + cleanName + '」を保存しました。');
+    } catch {
+      say('盤面を保存できませんでした。ブラウザの保存領域を確認してください。', 'error');
+    }
+  }
+
+  function loadSavedBoard() {
+    if (resolving || generatingBoard) return;
+    const item = readSavedBoards().find(entry => entry.id === savedBoardSelect.value);
+    if (!item || ![5, 6, 7].includes(item.width) || ![4, 5, 6].includes(item.height) ||
+        item.cells?.length !== item.width * item.height || item.roulette?.length !== item.cells.length) {
+      say('呼び出す盤面を選んでください。', 'error');
+      return;
+    }
+    saveUndo();
+    stopRouletteTimer();
+    W = item.width;
+    H = item.height;
+    N = W * H;
+    cells = item.cells.map(type => order.includes(type) ? type : null);
+    roulette = item.roulette.map((active, index) => Boolean(active && cells[index]));
+    moveCount = 0;
+    moveCountLabel.textContent = moveCount;
+    boardSizeSelect.value = W + 'x' + H;
+    board.style.setProperty('--columns', W);
+    boardSizeLabel.textContent = W + ' × ' + H;
+    buildGenerationOptions();
+    selected = -1;
+    drag = -1;
+    placing = null;
+    placingRoulette = false;
+    rouletteButton.classList.remove('active');
+    held.classList.remove('visible');
+    draw();
+    rouletteStartedAt = 0;
+    startRouletteTimer(true);
+    say('「' + item.name + '」を呼び出しました。');
+    savedBoardName.value = item.name;
+  }
+
+  function deleteSavedBoard() {
+    const id = savedBoardSelect.value;
+    if (!id) {
+      say('削除する盤面を選んでください。', 'error');
+      return;
+    }
+    const saved = readSavedBoards();
+    const item = saved.find(entry => entry.id === id);
+    try {
+      localStorage.setItem(savedBoardsKey, JSON.stringify(saved.filter(entry => entry.id !== id)));
+      refreshSavedBoards();
+      say('「' + (item?.name || '盤面') + '」を削除しました。');
+    } catch {
+      say('保存した盤面を削除できませんでした。', 'error');
+    }
+  }
 
   function saveUndo() {
     if (!cells.length) return;
-    history.push({cells:cells.slice(), roulette:roulette.slice(), W, H});
+    history.push({cells:cells.slice(), roulette:roulette.slice(), W, H, moveCount});
     if (history.length > 30) history.shift();
     undoButton.disabled = false;
   }
@@ -181,6 +296,8 @@ button:disabled{opacity:.45;cursor:default}
     W = previous.W;
     H = previous.H;
     N = W * H;
+    moveCount = previous.moveCount || 0;
+    moveCountLabel.textContent = moveCount;
     buildGenerationOptions();
     boardSizeSelect.value = W + 'x' + H;
     board.style.setProperty('--columns', W);
@@ -308,6 +425,8 @@ button:disabled{opacity:.45;cursor:default}
       const plan = getGenerationPlan();
       cells = Array(N).fill(null);
       roulette = Array(N).fill(false);
+      moveCount = 0;
+      moveCountLabel.textContent = moveCount;
       selected = -1;
       placing = null;
       placingRoulette = false;
@@ -532,6 +651,8 @@ button:disabled{opacity:.45;cursor:default}
     cells = Array.from({length:N}, randInitial);
     while (matches().size > 0) cells = Array.from({length:N}, randInitial);
     roulette = Array(N).fill(false);
+    moveCount = 0;
+    moveCountLabel.textContent = moveCount;
     selected = -1;
     placing = null;
     placingRoulette = false;
@@ -639,6 +760,10 @@ button:disabled{opacity:.45;cursor:default}
   }
 
   function moveAlongPath(destination) {
+    if (!dragged) {
+      moveCount = 0;
+      moveCountLabel.textContent = moveCount;
+    }
     let x = drag % W, y = Math.floor(drag / W);
     const x1 = destination % W, y1 = Math.floor(destination / W);
     const dx = Math.abs(x1 - x), sx = x < x1 ? 1 : -1;
@@ -651,6 +776,8 @@ button:disabled{opacity:.45;cursor:default}
       const next = y * W + x;
       [cells[drag], cells[next]] = [cells[next], cells[drag]];
       drag = next;
+      moveCount++;
+      moveCountLabel.textContent = moveCount;
     }
     dragged = true;
     selected = -1;
@@ -758,10 +885,10 @@ button:disabled{opacity:.45;cursor:default}
     draw();
     startRouletteTimer();
     if (!totalCleared) {
-      say('消えるドロップはありません。');
+      say(moveCount + '手で消えるドロップはありませんでした。');
       return;
     }
-    let message = totalCleared + '個のドロップを消去。' + comboCount + 'コンボしました。';
+    let message = moveCount + '手で' + totalCleared + '個のドロップを消去。' + comboCount + 'コンボしました。';
     if (bombCount > 0) message += '（爆弾 ' + bombCount + ' 個が爆発）';
     say(message, 'success');
   }
@@ -876,8 +1003,18 @@ button:disabled{opacity:.45;cursor:default}
   });
 
   undoButton.addEventListener('click', undo);
+  document.querySelector('#saveBoard').addEventListener('click', saveCurrentBoard);
+  document.querySelector('#loadBoard').addEventListener('click', loadSavedBoard);
+  document.querySelector('#deleteBoard').addEventListener('click', deleteSavedBoard);
+
+  savedBoardSelect.addEventListener('change', () => {
+    const item = readSavedBoards().find(entry => entry.id === savedBoardSelect.value);
+    if (item) savedBoardName.value = item.name;
+  });
+
   buildTypeOptions();
   buildGenerationOptions();
+  refreshSavedBoards();
   init();
 })();
 </script>
